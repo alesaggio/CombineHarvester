@@ -11,6 +11,7 @@ ROOT.TH1.AddDirectory(0)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--input', '-i', help='input json file')
+parser.add_argument('--input2', '-i2', help='input second json file')
 parser.add_argument('--output', '-o', help='name of the output file to create')
 parser.add_argument('--translate', '-t', help='JSON file for remapping of parameter names')
 parser.add_argument('--units', default=None, help='Add units to the best-fit parameter value')
@@ -32,8 +33,14 @@ if args.translate is not None:
 
 # Load the json output of combineTool.py -M Impacts
 data = {}
+data2 = {}
+isSecondInput = False
 with open(args.input) as jsonfile:
     data = json.load(jsonfile)
+if args.input2:
+    isSecondInput = True
+    with open(args.input2) as jsonfile:
+        data2 = json.load(jsonfile)
 
 # Set the global plotting style
 plot.ModTDRStyle(l=0.4, b=0.10, width=700)
@@ -44,6 +51,9 @@ POI_fit = data['POIs'][0]['fit']
 
 # Sort parameters by largest absolute impact on this POI
 data['params'].sort(key=lambda x: abs(x['impact_%s' % POIs[0]]), reverse=True)
+#if isSecondInput:
+#    data2['params'].sort(key=lambda x: abs(x['impact_%s' % POIs[0]]), reverse=True)
+
 
 # Set the number of parameters per page (show) and the number of pages (n)
 show = args.per_page
@@ -75,26 +85,83 @@ if args.color_groups is not None:
         color_group_hists[name] = ROOT.TH1F()
         plot.Set(color_group_hists[name], FillColor=col, Title=name)
 
+if isSecondInput:
+    n_params = len(data['params'])
+    n_params2 = len(data2['params'])
+    list_data=[]
+    data2NotInData=[]
+    for p in range(n_params):
+        list_data.append(data['params'][p]['name'])
+    for p2 in range(n_params2):
+        if data2['params'][p2]['name'] not in list_data:
+            print data2['params'][p2]['name']
+            data['params'].append(data2['params'][p2])
+            data2NotInData.append(str(data2['params'][p2]['name']))
+    print "data2NotInData: ", data2NotInData
+
+    list_data2=[]
+    dataNotInData2=[]
+    for p2 in range(n_params2):
+        list_data2.append(data2['params'][p2]['name'])
+    for p in range(n_params):
+        if data['params'][p]['name'] not in list_data2:
+            print data['params'][p]['name']
+            data2['params'].append(data['params'][p])
+            dataNotInData2.append(str(data['params'][p]['name']))
+
+    print len(data['params'])
+    print len(data2['params'])
+    #Now that the two datasets have the same length, sort data2 so that the syst will have
+    #the same order as in data
+
+    for p in range(len(data['params'])):
+        for p2 in range(len(data2['params'])):
+            if data['params'][p]['name'] == data2['params'][p2]['name']:
+                data2['params'][p], data2['params'][p2] = data2['params'][p2], data2['params'][p]
+
+    for p in range(n_params):
+        print data['params'][p]['name'], data2['params'][p]['name']
+
 for page in xrange(n):
     canv = ROOT.TCanvas(args.output, args.output)
     n_params = len(data['params'][show * page:show * (page + 1)])
     pdata = data['params'][show * page:show * (page + 1)]
+    if isSecondInput:
+        n_params2 = len(data2['params'][show * page:show * (page + 1)])
+        pdata2 = data2['params'][show * page:show * (page + 1)]
     print '>> Doing page %i, have %i parameters' % (page, n_params)
+    
 
     boxes = []
-    for i in xrange(n_params):
-        y1 = ROOT.gStyle.GetPadBottomMargin()
-        y2 = 1. - ROOT.gStyle.GetPadTopMargin()
-        h = (y2 - y1) / float(n_params)
-        y1 = y1 + float(i) * h
-        y2 = y1 + h
-        box = ROOT.TPaveText(0, y1, 1, y2, 'NDC')
-        plot.Set(box, TextSize=0.02, BorderSize=0, FillColor=0, TextAlign=12, Margin=0.005)
-        if i % 2 == 0:
-            box.SetFillColor(18)
-        box.AddText('%i' % (n_params - i + page * show))
-        box.Draw()
-        boxes.append(box)
+    if not isSecondInput or (isSecondInput and n_params==n_params2):
+        for i in xrange(n_params):
+            y1 = ROOT.gStyle.GetPadBottomMargin()
+            y2 = 1. - ROOT.gStyle.GetPadTopMargin()
+            h = (y2 - y1) / float(n_params)
+            y1 = y1 + float(i) * h
+            y2 = y1 + h
+            box = ROOT.TPaveText(0, y1, 1, y2, 'NDC')
+            plot.Set(box, TextSize=0.02, BorderSize=0, FillColor=0, TextAlign=12, Margin=0.005)
+            if i % 2 == 0:
+                box.SetFillColor(18)
+            box.AddText('%i' % (n_params - i + page * show))
+            box.Draw()
+            boxes.append(box)
+    else:
+        new_n_params = max(n_params, n_params2)
+        for i in xrange(new_n_params):
+            y1 = ROOT.gStyle.GetPadBottomMargin()
+            y2 = 1. - ROOT.gStyle.GetPadTopMargin()
+            h = (y2 - y1) / float(new_n_params)
+            y1 = y1 + float(i) * h
+            y2 = y1 + h
+            box = ROOT.TPaveText(0, y1, 1, y2, 'NDC')
+            plot.Set(box, TextSize=0.02, BorderSize=0, FillColor=0, TextAlign=12, Margin=0.005)
+            if i % 2 == 0:
+                box.SetFillColor(18)
+            box.AddText('%i' % (new_n_params - i + page * show))
+            box.Draw()
+            boxes.append(box)
 
     # Crate and style the pads
     pads = plot.TwoPadSplitColumns(0.7, 0., 0.)
@@ -103,57 +170,130 @@ for page in xrange(n):
     pads[1].SetGrid(1, 0)
     pads[1].SetTickx(1)
 
-    h_pulls = ROOT.TH2F("pulls", "pulls", 6, -2.9, 2.9, n_params, 0, n_params)
+    h_pulls = ROOT.TH2F("pulls", "pulls", 6, -2.9, 2.9, max(n_params,n_params2) if isSecondInput else n_params, 0, max(n_params, n_params2) if isSecondInput else n_params)
     g_pulls = ROOT.TGraphAsymmErrors(n_params)
+    if isSecondInput:
+        g_pulls2 = ROOT.TGraphAsymmErrors(n_params2)
     g_impacts_hi = ROOT.TGraphAsymmErrors(n_params)
     g_impacts_lo = ROOT.TGraphAsymmErrors(n_params)
     max_impact = 0.
 
     text_entries = []
     redo_boxes = []
-    for p in xrange(n_params):
-        i = n_params - (p + 1)
-        pre = pdata[p]['prefit']
-        fit = pdata[p]['fit']
-        tp = pdata[p]['type']
-        seen_types.add(tp)
-        if pdata[p]['type'] != 'Unconstrained':
-            pre_err_hi = (pre[2] - pre[1])
-            pre_err_lo = (pre[1] - pre[0])
-            pull = fit[1] - pre[1]
-            pull = (pull/pre_err_hi) if pull >= 0 else (pull/pre_err_lo)
-            pull_hi = fit[2] - pre[1]
-            pull_hi = (pull_hi/pre_err_hi) if pull_hi >= 0 else (pull_hi/pre_err_lo)
-            pull_hi = pull_hi - pull
-            pull_lo = fit[0] - pre[1]
-            pull_lo = (pull_lo/pre_err_hi) if pull_lo >= 0 else (pull_lo/pre_err_lo)
-            pull_lo =  pull - pull_lo
-            g_pulls.SetPoint(i, pull, float(i) + 0.5)
-            g_pulls.SetPointError(
-                i, pull_lo, pull_hi, 0., 0.)
-        else:
-            # Hide this point
-            g_pulls.SetPoint(i, 0., 9999.)
-            y1 = ROOT.gStyle.GetPadBottomMargin()
-            y2 = 1. - ROOT.gStyle.GetPadTopMargin()
-            x1 = ROOT.gStyle.GetPadLeftMargin()
-            h = (y2 - y1) / float(n_params)
-            y1 = y1 + ((float(i)+0.5) * h)
-            x1 = x1 + (0.7-x1)/2.
-            text_entries.append((x1, y1, '%.3g^{#plus%-.3g}_{#minus%-.3g}' % (fit[1], fit[2]-fit[1], fit[1]-fit[0])))
-            redo_boxes.append(i)
-        g_impacts_hi.SetPoint(i, 0, float(i) + 0.5)
-        g_impacts_lo.SetPoint(i, 0, float(i) + 0.5)
-        imp = pdata[p][POIs[0]]
-        g_impacts_hi.SetPointError(i, 0, imp[2] - imp[1], 0.5, 0.5)
-        g_impacts_lo.SetPointError(i, imp[1] - imp[0], 0, 0.5, 0.5)
-        max_impact = max(
-            max_impact, abs(imp[1] - imp[0]), abs(imp[2] - imp[1]))
-        col = colors.get(tp, 2)
-        if args.color_groups is not None and len(pdata[p]['groups']) == 1:
-            col = color_groups.get(pdata[p]['groups'][0], 1)
-        h_pulls.GetYaxis().SetBinLabel(
-            i + 1, ('#color[%i]{%s}'% (col, Translate(pdata[p]['name'], translate))))
+    if not isSecondInput:
+        for p in xrange(n_params):
+            i = n_params - (p + 1)
+            pre = pdata[p]['prefit']
+            fit = pdata[p]['fit']
+            tp = pdata[p]['type']
+            seen_types.add(tp)
+            if pdata[p]['type'] != 'Unconstrained':
+                pre_err_hi = (pre[2] - pre[1])
+                pre_err_lo = (pre[1] - pre[0])
+                pull = fit[1] - pre[1]
+                pull = (pull/pre_err_hi) if pull >= 0 else (pull/pre_err_lo)
+                pull_hi = fit[2] - pre[1]
+                pull_hi = (pull_hi/pre_err_hi) if pull_hi >= 0 else (pull_hi/pre_err_lo)
+                pull_hi = pull_hi - pull
+                pull_lo = fit[0] - pre[1]
+                pull_lo = (pull_lo/pre_err_hi) if pull_lo >= 0 else (pull_lo/pre_err_lo)
+                pull_lo =  pull - pull_lo
+                g_pulls.SetPoint(i, pull, float(i) + 0.5)
+                g_pulls.SetPointError(i, pull_lo, pull_hi, 0., 0.)
+
+            #else:
+            #    # Hide this point
+            #    g_pulls.SetPoint(i, 0., 9999.)
+            #    y1 = ROOT.gStyle.GetPadBottomMargin()
+            #    y2 = 1. - ROOT.gStyle.GetPadTopMargin()
+            #    x1 = ROOT.gStyle.GetPadLeftMargin()
+            #    h = (y2 - y1) / float(n_params)
+            #    y1 = y1 + ((float(i)+0.5) * h)
+            #    x1 = x1 + (0.7-x1)/2.
+            #    text_entries.append((x1, y1, '%.3g^{#plus%-.3g}_{#minus%-.3g}' % (fit[1], fit[2]-fit[1], fit[1]-fit[0])))
+            #    redo_boxes.append(i)
+            g_impacts_hi.SetPoint(i, 0, float(i) + 0.5)
+            g_impacts_lo.SetPoint(i, 0, float(i) + 0.5)
+            imp = pdata[p][POIs[0]]
+            g_impacts_hi.SetPointError(i, 0, imp[2] - imp[1], 0.5, 0.5)
+            g_impacts_lo.SetPointError(i, imp[1] - imp[0], 0, 0.5, 0.5)
+            max_impact = max(
+                max_impact, abs(imp[1] - imp[0]), abs(imp[2] - imp[1]))
+            col = colors.get(tp, 2)
+            if args.color_groups is not None and len(pdata[p]['groups']) == 1:
+                col = color_groups.get(pdata[p]['groups'][0], 1)
+            h_pulls.GetYaxis().SetBinLabel(
+                i + 1, ('#color[%i]{%s}'% (col, Translate(pdata[p]['name'], translate))))
+    else:
+        for p in xrange(n_params):
+            for p2 in xrange(n_params2):
+                i = n_params - (p + 1)
+                #Ensure you pair the same syst.
+                if pdata[p]['name'] != pdata2[p2]['name']:
+                    continue
+                pre = pdata[p]['prefit']
+                fit = pdata[p]['fit']
+                tp = pdata[p]['type']
+                pre2 = pdata2[p2]['prefit']
+                fit2 = pdata2[p2]['fit']
+                tp2 = pdata2[p2]['type']
+                seen_types.add(tp)
+                if pdata[p]['type'] != 'Unconstrained' and  pdata2[p2]['type'] != 'Unconstrained':
+                    pre_err_hi = (pre[2] - pre[1])
+                    pre_err_lo = (pre[1] - pre[0])
+                    pull = fit[1] - pre[1]
+                    pull = (pull/pre_err_hi) if pull >= 0 else (pull/pre_err_lo)
+                    pull_hi = fit[2] - pre[1]
+                    pull_hi = (pull_hi/pre_err_hi) if pull_hi >= 0 else (pull_hi/pre_err_lo)
+                    pull_hi = pull_hi - pull
+                    pull_lo = fit[0] - pre[1]
+                    pull_lo = (pull_lo/pre_err_hi) if pull_lo >= 0 else (pull_lo/pre_err_lo)
+                    pull_lo =  pull - pull_lo
+                    if pdata[p]['name'] not in data2NotInData:
+                        g_pulls.SetPoint(i, pull, float(i) + 0.5)
+                        g_pulls.SetPointError(i, pull_lo, pull_hi, 0., 0.)
+                    #Now for second file
+                    pre_err_hi2 = (pre2[2] - pre2[1])
+                    pre_err_lo2 = (pre2[1] - pre2[0])
+                    pull2 = fit2[1] - pre2[1]
+                    pull2 = (pull2/pre_err_hi2) if pull2 >= 0 else (pull2/pre_err_lo2)
+                    pull_hi2 = fit2[2] - pre2[1]
+                    pull_hi2 = (pull_hi2/pre_err_hi2) if pull_hi2 >= 0 else (pull_hi2/pre_err_lo2)
+                    pull_hi2 = pull_hi2 - pull2
+                    pull_lo2 = fit2[0] - pre2[1]
+                    pull_lo2 = (pull_lo2/pre_err_hi2) if pull_lo2 >= 0 else (pull_lo2/pre_err_lo2)
+                    pull_lo2 =  pull2 - pull_lo2
+                    if pdata2[p2]['name'] not in dataNotInData2:
+                        g_pulls2.SetPoint(i, pull2, float(i) + 0.7)
+                        g_pulls2.SetPointError(i, pull_lo2, pull_hi2, 0., 0.)
+
+                #else:
+                #    # Hide this point
+                #    g_pulls.SetPoint(i, 0., 9999.)
+                #    y1 = ROOT.gStyle.GetPadBottomMargin()
+                #    y2 = 1. - ROOT.gStyle.GetPadTopMargin()
+                #    x1 = ROOT.gStyle.GetPadLeftMargin()
+                #    h = (y2 - y1) / float(n_params)
+                #    y1 = y1 + ((float(i)+0.5) * h)
+                #    x1 = x1 + (0.7-x1)/2.
+                #    text_entries.append((x1, y1, '%.3g^{#plus%-.3g}_{#minus%-.3g}' % (fit[1], fit[2]-fit[1], fit[1]-fit[0])))
+                #    redo_boxes.append(i)
+
+
+                    g_impacts_hi.SetPoint(i, 0, float(i) + 0.5)
+                    g_impacts_lo.SetPoint(i, 0, float(i) + 0.5)
+                    imp = pdata[p][POIs[0]]
+                    g_impacts_hi.SetPointError(i, 0, imp[2] - imp[1], 0.5, 0.5)
+                    g_impacts_lo.SetPointError(i, imp[1] - imp[0], 0, 0.5, 0.5)
+                    max_impact = max(
+                        max_impact, abs(imp[1] - imp[0]), abs(imp[2] - imp[1]))
+                    col = colors.get(tp, 2)
+                    if args.color_groups is not None and len(pdata[p]['groups']) == 1:
+                        col = color_groups.get(pdata[p]['groups'][0], 1)
+                    h_pulls.GetYaxis().SetBinLabel(
+                        i + 1, ('#color[%i]{%s}'% (col, Translate(pdata[p]['name'], translate))))
+
+
 
     # Style and draw the pulls histo
     plot.Set(h_pulls.GetXaxis(), TitleSize=0.04, LabelSize=0.03, Title='(#hat{#theta}-#theta_{0})/#Delta#theta')
@@ -192,6 +332,9 @@ for page in xrange(n):
     pads[0].cd()
     plot.Set(g_pulls, MarkerSize=0.8, LineWidth=2)
     g_pulls.Draw('PSAME')
+    if isSecondInput:
+        plot.Set(g_pulls2, MarkerSize=0.8, LineWidth=2, LineColor=2)
+        g_pulls2.Draw('PSAME')
 
     # And back to the second pad to draw the impacts graphs
     pads[1].cd()
